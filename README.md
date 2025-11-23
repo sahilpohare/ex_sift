@@ -297,6 +297,7 @@ MIT License - See LICENSE file for details
 ## Acknowledgments
 
 Inspired by [sift.js](https://github.com/crcn/sift.js) by Craig Condon.
+Created by Sahilpohare
 
 ## Contributing
 
