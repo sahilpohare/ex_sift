@@ -2,8 +2,17 @@ defmodule ExSift.Operators do
   @moduledoc """
   Implementation of MongoDB-style query operators.
 
-  This module provides all the comparison, logical, and array operators
-  used in MongoDB queries.
+  This module provides the low-level implementation for all supported operators.
+  These functions are typically not called directly but are used by the
+  `ExSift.Compiler` to build matcher functions.
+
+  ## Categories
+
+  - **Comparison**: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`
+  - **Logical**: `$and`, `$or`, `$nor`, `$not`
+  - **Array**: `$in`, `$nin`, `$all`, `$size`, `$elemMatch`
+  - **Element**: `$exists`, `$type`
+  - **Evaluation**: `$mod`, `$regex`
   """
 
   alias ExSift.Query

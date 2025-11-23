@@ -42,6 +42,14 @@ defmodule ExSift do
   - `$regex` - Regular expression match
   - `$type` - Type checking
   - `$mod` - Modulus operation
+
+  ## Performance
+
+  ExSift compiles queries into optimized Elixir functions. This means that for repeated filtering
+  operations, the query parsing overhead is paid only once.
+
+  The `compile/1` function returns a closure that can be used with `Enum.filter/2`, `Enum.find/2`,
+  or called directly on individual items.
   """
 
   @doc """

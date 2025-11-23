@@ -1,6 +1,17 @@
 defmodule ExSift.Compiler do
   @moduledoc """
   Compiles MongoDB-style queries into optimized Elixir functions.
+
+  This module is responsible for traversing the query structure and building a
+  tree of matcher functions. It performs several optimizations:
+
+  1.  **Path Unrolling**: Nested property paths (e.g., "user.profile.age") are
+      resolved into efficient traversal functions.
+  2.  **Operator Resolution**: Operators are looked up and bound to their
+      implementation functions at compile time.
+  3.  **Implicit Traversal**: Logic for handling list traversal (e.g., checking
+      if any element in a list matches a condition) is embedded in the
+      matcher.
   """
 
   alias ExSift.Operators
