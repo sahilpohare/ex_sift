@@ -239,6 +239,29 @@ defmodule ExSiftTest do
       result = ExSift.filter(data, %{address: %{state: "CA"}})
       assert length(result) == 2
     end
+
+    test "nested map partial matching (implicit)" do
+      data = [
+        %{user: %{name: "Alice", profile: %{age: 30, city: "NYC"}}},
+        %{user: %{name: "Bob", profile: %{age: 25, city: "SF"}}}
+      ]
+
+      # Should match even though profile has 'age' as well
+      result = ExSift.filter(data, %{user: %{profile: %{city: "NYC"}}})
+      assert length(result) == 1
+      assert hd(result).user.name == "Alice"
+    end
+
+    test "nested map with operators" do
+      data = [
+        %{meta: %{score: 10, tags: ["a"]}},
+        %{meta: %{score: 20, tags: ["b"]}}
+      ]
+
+      result = ExSift.filter(data, %{meta: %{score: %{"$gt" => 15}}})
+      assert length(result) == 1
+      assert hd(result).meta.score == 20
+    end
   end
 
   describe "utility functions" do
