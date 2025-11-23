@@ -1,5 +1,8 @@
 # ExSift
 
+[![Hex.pm](https://img.shields.io/hexpm/v/ex_sift.svg)](https://hex.pm/packages/ex_sift)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/ex_sift)
+
 MongoDB-style query filtering for Elixir collections.
 
 ExSift is an Elixir library inspired by [sift.js](https://github.com/crcn/sift.js) that brings MongoDB's powerful query syntax to Elixir. Filter lists, maps, and any enumerable with an expressive, familiar query language.
