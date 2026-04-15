@@ -15,7 +15,7 @@ defmodule ExSift.Operators do
   - **Evaluation**: `$mod`, `$regex`
   """
 
-  alias ExSift.Query
+  alias ExSift.{Collection, Query}
 
   # ============================================================================
   # Comparison Operators
@@ -36,14 +36,6 @@ defmodule ExSift.Operators do
       Enum.zip(a, b) |> Enum.all?(fn {x, y} -> equals?(x, y) end)
   end
 
-  # Compare maps
-  def equals?(a, b) when is_map(a) and is_map(b) do
-    map_size(a) == map_size(b) and
-      Enum.all?(a, fn {key, val} ->
-        Map.has_key?(b, key) and equals?(val, Map.get(b, key))
-      end)
-  end
-
   # Compare DateTime/NaiveDateTime
   def equals?(%DateTime{} = a, %DateTime{} = b), do: DateTime.compare(a, b) == :eq
   def equals?(%NaiveDateTime{} = a, %NaiveDateTime{} = b), do: NaiveDateTime.compare(a, b) == :eq
@@ -53,6 +45,33 @@ defmodule ExSift.Operators do
 
   # Compare Regex (matches against strings)
   def equals?(value, %Regex{} = regex) when is_binary(value), do: Regex.match?(regex, value)
+
+  # Non-string value against Regex never matches
+  def equals?(_, %Regex{}), do: false
+
+  # Compare structs (must be same type, then compare fields recursively)
+  def equals?(%t{} = a, %t{} = b) do
+    a_fields = Map.from_struct(a)
+    b_fields = Map.from_struct(b)
+
+    map_size(a_fields) == map_size(b_fields) and
+      Enum.all?(a_fields, fn {key, val} ->
+        Map.has_key?(b_fields, key) and equals?(val, Map.get(b_fields, key))
+      end)
+  end
+
+  # Structs of different types are never equal; struct vs non-struct
+  def equals?(%_{}, %_{}), do: false
+  def equals?(%_{}, _), do: false
+  def equals?(_, %_{}), do: false
+
+  # Compare plain maps
+  def equals?(a, b) when is_map(a) and is_map(b) do
+    map_size(a) == map_size(b) and
+      Enum.all?(a, fn {key, val} ->
+        Map.has_key?(b, key) and equals?(val, Map.get(b, key))
+      end)
+  end
 
   # Default comparison
   def equals?(a, b), do: a == b
@@ -125,12 +144,29 @@ defmodule ExSift.Operators do
 
   If value is a list, checks if there's any intersection.
   """
+  # Plain list value — check intersection with query list
   def in?(value, list) when is_list(list) and is_list(value) do
     Enum.any?(value, fn v -> Enum.any?(list, &equals?(v, &1)) end)
   end
 
+  # MapSet value — check if any query item is a member of the set
+  def in?(%MapSet{} = value, list) when is_list(list) do
+    Enum.any?(list, &Collection.member?(value, &1))
+  end
+
+  # Custom struct value — check if any query item is a member
+  def in?(%_{} = value, list) when is_list(list) do
+    Enum.any?(list, &Collection.member?(value, &1))
+  end
+
+  # Scalar value — check if it is in the query list
   def in?(value, list) when is_list(list) do
     Enum.any?(list, &equals?(value, &1))
+  end
+
+  # MapSet on the right side (non-list)
+  def in?(value, %MapSet{} = collection) do
+    Collection.member?(collection, value)
   end
 
   def in?(_, _), do: false
@@ -151,6 +187,15 @@ defmodule ExSift.Operators do
     end)
   end
 
+  # MapSet or custom struct — use Collection.member?/2
+  def all?(%MapSet{} = value, expected) when is_list(expected) do
+    Enum.all?(expected, &Collection.member?(value, &1))
+  end
+
+  def all?(%_{} = value, expected) when is_list(expected) do
+    Enum.all?(expected, &Collection.member?(value, &1))
+  end
+
   def all?(_, _), do: false
 
   @doc """
@@ -164,6 +209,15 @@ defmodule ExSift.Operators do
     String.length(value) == size
   end
 
+  # MapSet or custom struct — use Collection.size/1
+  def size?(%MapSet{} = value, size) when is_integer(size) do
+    Collection.size(value) == size
+  end
+
+  def size?(%_{} = value, size) when is_integer(size) do
+    Collection.size(value) == size
+  end
+
   def size?(_, _), do: false
 
   @doc """
@@ -171,6 +225,13 @@ defmodule ExSift.Operators do
   """
   def elem_match?(value, query) when is_list(value) do
     Enum.any?(value, &Query.matches?(&1, query))
+  end
+
+  # MapSet — iterate elements
+  def elem_match?(%MapSet{} = value, query) do
+    value
+    |> MapSet.to_list()
+    |> Enum.any?(&Query.matches?(&1, query))
   end
 
   def elem_match?(_, _), do: false

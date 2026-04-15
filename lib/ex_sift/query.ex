@@ -3,9 +3,10 @@ defmodule ExSift.Query do
   Core query matching logic for ExSift.
 
   This module handles parsing and matching MongoDB-style queries against values.
+  Supports any type implementing the `ExSift.Collection` protocol.
   """
 
-  alias ExSift.Operators
+  alias ExSift.{Collection, Operators}
 
   @doc """
   Tests if a value matches a query.
@@ -17,22 +18,28 @@ defmodule ExSift.Query do
 
       iex> ExSift.Query.matches?(%{age: 30}, %{age: %{"$gt" => 25}})
       true
+
+      iex> ExSift.Query.matches?(MapSet.new([1, 2, 3]), %{"$size" => 3})
+      true
+
+      iex> ExSift.Query.matches?([a: 1, b: 2], %{"a" => 1})
+      true
   """
-  # Handle Regex directly (must come before is_map guard)
+  # Handle Regex directly (must come before map guard)
   def matches?(value, %Regex{} = regex) do
     Operators.equals?(value, regex)
   end
 
-  def matches?(value, query) when is_map(query) do
+  def matches?(value, query) when is_map(query) and not is_struct(query) do
     cond do
-      # Check if it's an operator query (keys start with $)
-      has_operator?(query) ->
-        match_operators?(value, query)
-
-      # It's a shape query - match against object properties
-      true ->
-        match_shape?(value, query)
+      has_operator?(query) -> match_operators?(value, query)
+      true -> match_shape?(value, query)
     end
+  end
+
+  # Structs used as query values — direct equality
+  def matches?(value, %_{} = query) do
+    Operators.equals?(value, query)
   end
 
   # Direct value comparison
@@ -58,62 +65,57 @@ defmodule ExSift.Query do
     end)
   end
 
-  # Match against object shape
-  defp match_shape?(value, query) when is_map(value) and is_map(query) do
-    Enum.all?(query, fn {key, expected} ->
-      match_property?(value, key, expected)
-    end)
+  # Match against object shape — delegates to Collection protocol
+  defp match_shape?(value, query) when is_map(query) do
+    pairs = Collection.to_pairs(value)
+
+    if pairs != nil do
+      Enum.all?(query, fn {key, expected} ->
+        match_property?(value, key, expected)
+      end)
+    else
+      false
+    end
   end
 
   defp match_shape?(_, _), do: false
 
-  # Match a specific property path
+  # Match a specific property path (dot notation supported)
   defp match_property?(value, key, expected) when is_binary(key) do
-    # Support dot notation for nested paths
     path = String.split(key, ".")
     actual = get_nested_value(value, path)
 
-    cond do
-      # If actual is a list and we're not at a numeric index,
-      # check if any element matches (like MongoDB)
-      is_list(actual) and not is_numeric_key?(List.last(path)) ->
-        Enum.any?(actual, &matches?(&1, expected))
-
-      true ->
-        matches?(actual, expected)
+    # If actual is a plain list (not keyword) and last key isn't a numeric index,
+    # check if any element matches (MongoDB-style implicit $elemMatch)
+    if plain_list?(actual) and not is_numeric_key?(List.last(path)) do
+      Enum.any?(actual, &matches?(&1, expected))
+    else
+      matches?(actual, expected)
     end
   end
 
   defp match_property?(value, key, expected) do
-    # Handle atom keys
-    actual = Map.get(value, key)
+    actual = Collection.fetch(value, key)
     matches?(actual, expected)
   end
 
-  # Get nested value using dot notation
+  # Traverse nested path using the Collection protocol
   defp get_nested_value(value, []), do: value
 
-  defp get_nested_value(value, [key | rest]) when is_map(value) do
-    # Try both string and atom keys
-    next_value =
-      Map.get(value, key) ||
-        Map.get(value, String.to_existing_atom(key))
-
-    get_nested_value(next_value, rest)
-  rescue
-    ArgumentError -> get_nested_value(nil, rest)
+  defp get_nested_value(value, [key | rest]) do
+    next = Collection.fetch(value, key)
+    get_nested_value(next, rest)
   end
 
-  defp get_nested_value(_, _), do: nil
-
   defp is_numeric_key?(key) when is_binary(key) do
-    case Integer.parse(key) do
-      {_, ""} -> true
-      _ -> false
-    end
+    match?({_, ""}, Integer.parse(key))
   end
 
   defp is_numeric_key?(_), do: false
+
+  # A plain list (not a keyword list) — these get implicit element matching
+  defp plain_list?(value) when is_list(value), do: not Keyword.keyword?(value)
+  defp plain_list?(_), do: false
 
   # Apply operator to value
   defp apply_operator("$eq", value, param), do: Operators.equals?(value, param)

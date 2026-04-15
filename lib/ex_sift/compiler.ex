@@ -14,8 +14,7 @@ defmodule ExSift.Compiler do
       matcher.
   """
 
-  alias ExSift.Operators
-  alias ExSift.Query
+  alias ExSift.{Collection, Operators, Query}
 
   def compile(query) do
     matcher = build_matcher(query)
@@ -26,7 +25,7 @@ defmodule ExSift.Compiler do
     fn value -> Operators.equals?(value, regex) end
   end
 
-  defp build_matcher(query) when is_map(query) do
+  defp build_matcher(query) when is_map(query) and not is_struct(query) do
     cond do
       Query.has_operator?(query) ->
         build_operator_matcher(query)
@@ -82,11 +81,7 @@ defmodule ExSift.Compiler do
   defp build_single_operator_matcher("$size", param), do: fn v -> Operators.size?(v, param) end
 
   defp build_single_operator_matcher("$elemMatch", param) do
-    inner_matcher = build_matcher(param)
-
-    fn v ->
-      is_list(v) and Enum.any?(v, inner_matcher)
-    end
+    fn v -> Operators.elem_match?(v, param) end
   end
 
   defp build_single_operator_matcher("$not", param) do
@@ -120,7 +115,8 @@ defmodule ExSift.Compiler do
       end)
 
     fn value ->
-      is_map(value) and Enum.all?(matchers, fn matcher -> matcher.(value) end)
+      Collection.to_pairs(value) != nil and
+        Enum.all?(matchers, fn matcher -> matcher.(value) end)
     end
   end
 
@@ -158,20 +154,9 @@ defmodule ExSift.Compiler do
   defp build_path_traverser([key | rest]) do
     next_traverser = build_path_traverser(rest)
 
-    atom_key =
-      try do
-        String.to_existing_atom(key)
-      rescue
-        _ -> nil
-      end
-
     fn root ->
-      if is_map(root) do
-        val = Map.get(root, key) || (atom_key && Map.get(root, atom_key))
-        next_traverser.(val)
-      else
-        nil
-      end
+      val = Collection.fetch(root, key)
+      next_traverser.(val)
     end
   end
 
